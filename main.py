@@ -21,8 +21,8 @@ app = FastAPI()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_PATH = os.path.join(BASE_DIR, "..", "frontend")
 
-# Servir arquivos estáticos da pasta frontend
-app.mount("/static", StaticFiles(directory=FRONTEND_PATH), name="static")
+# # Servir arquivos estáticos da pasta frontend
+# app.mount("/static", StaticFiles(directory=FRONTEND_PATH), name="static")
 
 
 class LocationData(BaseModel):
