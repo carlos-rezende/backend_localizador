@@ -8,6 +8,8 @@ import requests
 import os
 import json
 
+import uvicorn
+
 # Carregar o arquivo .env
 load_dotenv()
 
@@ -156,3 +158,7 @@ async def save_config(telegram_token: str = Form(...), chat_id: str = Form(...))
     load_dotenv()
 
     return {"message": "Configuração salva com sucesso!"}
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8080))  # Use a variável de ambiente PORT
+    uvicorn.run(app, host="0.0.0.0", port=port)
