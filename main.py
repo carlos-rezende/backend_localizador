@@ -3,6 +3,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
 import os
@@ -25,6 +26,17 @@ FRONTEND_PATH = os.path.join(BASE_DIR, "..", "frontend")
 
 # # Servir arquivos estáticos da pasta frontend
 # app.mount("/static", StaticFiles(directory=FRONTEND_PATH), name="static")
+
+# Configuração do CORS
+app.add_middleware(
+    CORSMiddleware,
+    # Adicione o domínio do seu frontend
+    allow_origins=["https://frontend-localizador.vercel.app"],
+    allow_credentials=True,
+    # Permitir todos os métodos (GET, POST, PUT, DELETE, etc.)
+    allow_methods=["*"],
+    allow_headers=["*"],  # Permitir todos os cabeçalhos
+)
 
 
 class LocationData(BaseModel):
@@ -158,6 +170,7 @@ async def save_config(telegram_token: str = Form(...), chat_id: str = Form(...))
     load_dotenv()
 
     return {"message": "Configuração salva com sucesso!"}
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))  # Use a variável de ambiente PORT
